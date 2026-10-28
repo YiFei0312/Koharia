@@ -63,6 +63,13 @@ abstract class PageLoader {
         pages.lastOrNull()?.let(::setActivePage)
     }
 
+    /**
+     * Enables prefetching of adjacent pages for continuous (webtoon) viewers. Those viewers keep
+     * several pages mounted around the viewport, so pages have to be warmed before they become
+     * visible instead of only after the active page has been displayed.
+     */
+    open fun setContinuousMode(enabled: Boolean) {}
+
     /** Releases speculative work only after the active page has actually been displayed. */
     open fun onPageDisplayed(page: ReaderPage) {}
 

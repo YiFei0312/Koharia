@@ -188,6 +188,12 @@ class ReaderViewModel @JvmOverloads constructor(
      */
     private var loader: ChapterLoader? = null
 
+    /**
+     * Whether pages are currently rendered by a continuous (webtoon) viewer, which keeps several
+     * pages mounted around the viewport and therefore needs adjacent pages prefetched.
+     */
+    private var continuousViewer = false
+
     private var documentSettingsProvider: () -> DocumentRenderSettings = {
         DocumentRenderSettings.DEFAULT
     }
@@ -536,6 +542,9 @@ class ReaderViewModel @JvmOverloads constructor(
             mutableState.update { it.copy(archiveLoadingStage = null) }
         }
         persistDocumentPageCount(chapter)
+        // Chapters preloaded while a continuous viewer is active still need their adjacent pages
+        // warmed, even before the reader selects a page in them.
+        chapter.pageLoader?.setContinuousMode(continuousViewer)
 
         val chapterPos = chapterList.indexOf(chapter)
         val newChapters = ViewerChapters(
@@ -716,6 +725,24 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     /**
+     * Applies a continuous (webtoon) viewer mode to the page loaders that are currently loaded.
+     * Those viewers keep several pages mounted around the viewport, so their loaders prefetch
+     * adjacent pages.
+     */
+    fun setContinuousViewer(continuous: Boolean) {
+        if (continuousViewer == continuous) return
+        continuousViewer = continuous
+        val chapters = mutableListOf<ReaderChapter>()
+        getCurrentChapter()?.let { chapters += it }
+        state.value.viewerChapters?.let { viewerChapters ->
+            chapters += viewerChapters.currChapter
+            viewerChapters.prevChapter?.let { chapters += it }
+            viewerChapters.nextChapter?.let { chapters += it }
+        }
+        chapters.distinct().forEach { chapter -> chapter.pageLoader?.setContinuousMode(continuous) }
+    }
+
+    /**
      * Called every time a page changes on the reader. Used to mark the flag of chapters being
      * read, update tracking services, enqueue downloaded chapter deletion, and updating the active chapter if this
      * [page]'s chapter is different from the currently active.
@@ -738,6 +765,7 @@ class ReaderViewModel @JvmOverloads constructor(
         if (physicalPages.any { it.chapter !== selectedChapter }) return
         selectedChapter.requestedPage = page.index
         chapterPageIndex = page.index
+        selectedChapter.pageLoader?.setContinuousMode(continuousViewer)
         selectedChapter.pageLoader?.setActivePages(physicalPages)
         mutableState.update {
             it.copy(
@@ -768,6 +796,7 @@ class ReaderViewModel @JvmOverloads constructor(
         val physicalPages = visiblePages.filterNot { it is InsertPage }.distinctBy { it.index }
         val chapter = physicalPages.firstOrNull()?.chapter ?: return
         if (physicalPages.any { it.chapter !== chapter }) return
+        chapter.pageLoader?.setContinuousMode(continuousViewer)
         chapter.pageLoader?.setActivePages(physicalPages)
         val anchor = anchorPage?.takeIf { candidate ->
             candidate.chapter === chapter && physicalPages.any { it.index == candidate.index }

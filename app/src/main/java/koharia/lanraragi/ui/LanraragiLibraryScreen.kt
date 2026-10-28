@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
@@ -39,6 +38,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.browse.BrowseSourceContent
 import eu.kanade.presentation.library.components.MangaReadProgress
 import eu.kanade.presentation.library.components.MangaReadProgressDisplay
+import eu.kanade.presentation.library.components.connectionShelfGridCells
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import koharia.connection.ConnectionBrowseScreen
@@ -238,7 +238,7 @@ class LanraragiLibraryScreen(
                         ),
                         source = source,
                         mangaList = pages,
-                        columns = if (columnCount > 0) GridCells.Fixed(columnCount) else GridCells.Adaptive(120.dp),
+                        columns = connectionShelfGridCells(columnCount),
                         displayMode = state.displayMode,
                         snackbarHostState = snackbar, contentPadding = PaddingValues(0.dp), showLibraryBadges = false,
                         readProgress = if (showReadProgress) {

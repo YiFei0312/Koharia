@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.ExperimentalMaterialApi
@@ -65,6 +64,7 @@ import eu.kanade.presentation.browse.BrowseSourceContent
 import eu.kanade.presentation.browse.MissingSourceScreen
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
+import eu.kanade.presentation.library.components.connectionShelfGridCells
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.data.cache.CoverCache
@@ -625,7 +625,7 @@ data class LocalLibraryScreen(
                             BrowseSourceContent(
                                 source = screenModel.source,
                                 mangaList = mangaList,
-                                columns = libraryGridCellsForColumns(columns),
+                                columns = connectionShelfGridCells(columns),
                                 displayMode = displayMode,
                                 snackbarHostState = snackbarHostState,
                                 contentPadding = paddingValues,
@@ -997,12 +997,3 @@ private fun localLibraryEmptyActions(
         onClick = onManageDirectories,
     ),
 )
-
-private fun libraryGridCellsForColumns(columns: Int): GridCells {
-    val coercedColumns = columns.coerceIn(0, 10)
-    return if (coercedColumns == 0) {
-        GridCells.Adaptive(128.dp)
-    } else {
-        GridCells.Fixed(coercedColumns)
-    }
-}

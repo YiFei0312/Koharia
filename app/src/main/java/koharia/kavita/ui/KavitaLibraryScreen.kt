@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
@@ -38,6 +37,7 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.browse.BrowseSourceContent
+import eu.kanade.presentation.library.components.connectionShelfGridCells
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import koharia.connection.ConnectionBrowseScreen
@@ -272,11 +272,7 @@ class KavitaLibraryScreen(
                             modifier = Modifier.fillMaxSize(),
                             source = source,
                             mangaList = pages,
-                            columns = if (columns > 0) {
-                                GridCells.Fixed(columns)
-                            } else {
-                                GridCells.Adaptive(120.dp)
-                            },
+                            columns = connectionShelfGridCells(columns),
                             displayMode = state.displayMode,
                             snackbarHostState = snackbar,
                             contentPadding = PaddingValues(0.dp),

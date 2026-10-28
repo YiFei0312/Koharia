@@ -77,6 +77,14 @@ internal class HttpPageLoader(
     @Volatile
     private var networkRequestsDeferred = false
 
+    /**
+     * Whether the active viewer renders several pages around the viewport (webtoon/continuous
+     * vertical). In that case adjacent pages are prefetched symmetrically and as soon as a page
+     * becomes active instead of only after the visible page has been displayed.
+     */
+    @Volatile
+    private var continuousMode = false
+
     private val domainChapter
         get() = checkNotNull(chapter.chapter.toDomainChapter())
 
@@ -258,9 +266,18 @@ internal class HttpPageLoader(
             logicalPageIndex = progressPage.index,
             pageCount = chapterPages.size,
         )
+        val prefetchIndexes = if (continuousMode) {
+            continuousPrefetchIndexes(chapterPages.size, activePages)
+        } else {
+            activation.prefetchIndexes
+        }
         val needsUrgentLoad = activePages.any { it.status != Page.State.Ready }
         preemptLoadsOutside(activeSet, reason = "active-pages-changed")
-        if (activation.changed) {
+        // Pager spreads load the active page before speculative pages. Continuous viewers instead
+        // keep a rolling window warm, so cancelling every in-flight prefetch on each page change
+        // would restart adjacent downloads constantly. The priority queue still serves the active
+        // page first.
+        if (activation.changed && !continuousMode) {
             activePages.firstOrNull { it.status == Page.State.Queue }?.let {
                 preemptPrefetchFor(it, reason = "visible-spread-changed")
             }
@@ -271,7 +288,7 @@ internal class HttpPageLoader(
                     (queued.priority == PriorityPage.DEFAULT && queued.page !in activeSet)
             }
             activePages.forEach { enqueuePageLocked(it, PriorityPage.DEFAULT) }
-            enqueuePrefetchWindowLocked(chapterPages, activation.prefetchIndexes)
+            enqueuePrefetchWindowLocked(chapterPages, prefetchIndexes)
         }
         if (activation.changed) {
             logcat {
@@ -279,8 +296,27 @@ internal class HttpPageLoader(
                     "pages=${activePages.joinToString { it.number.toString() }}"
             }
         }
-        if (!needsUrgentLoad && activation.prefetchIndexes.isNotEmpty()) {
-            logPrefetchWindow(progressPage, activation.prefetchIndexes, reason = "pages-selected")
+        if (!needsUrgentLoad && prefetchIndexes.isNotEmpty()) {
+            logPrefetchWindow(progressPage, prefetchIndexes, reason = "pages-selected")
+        }
+    }
+
+    override fun setContinuousMode(enabled: Boolean) {
+        if (continuousMode == enabled) return
+        continuousMode = enabled
+        if (isRecycled) return
+        if (!enabled) {
+            // Drop the speculative window when a pager viewer replaces the continuous one.
+            synchronized(schedulerLock) {
+                removeQueuedPagesLocked { it.priority == PriorityPage.ADJACENT }
+            }
+            return
+        }
+        val chapterPages = chapter.pages ?: return
+        val activePages = chapterPages.filter { pageLoadGate.isActive(it.index) }
+        if (activePages.isEmpty()) return
+        synchronized(schedulerLock) {
+            enqueuePrefetchWindowLocked(chapterPages, continuousPrefetchIndexes(chapterPages.size, activePages))
         }
     }
 
@@ -289,6 +325,9 @@ internal class HttpPageLoader(
     }
 
     override fun onPagesDisplayed(pages: List<ReaderPage>) {
+        // Continuous viewers prefetch on page activation; waiting until a page is displayed
+        // would leave the following pages blank while the user scrolls through them.
+        if (continuousMode) return
         val activePages = pages.distinctBy { it.index }
         val chapterPages = activePages.firstOrNull()?.chapter?.pages ?: return
         val activeIndexes = activePages.mapTo(linkedSetOf()) { it.index }
@@ -307,7 +346,12 @@ internal class HttpPageLoader(
     private fun preemptLoadsOutside(activePages: Set<ReaderPage>, reason: String) {
         val firstActiveIndex = activePages.minOfOrNull { it.index } ?: return
         val lastActiveIndex = activePages.maxOfOrNull { it.index } ?: return
-        val maxDistance = activePages.size * 2
+        val maxDistance = if (continuousMode) {
+            // Keep the symmetric prefetch window of continuous viewers alive.
+            maxOf(activePages.size * 2, CONTINUOUS_PREFETCH_RADIUS + 1)
+        } else {
+            activePages.size * 2
+        }
         val staleLoads = synchronized(schedulerLock) {
             activeLoads.filter {
                 val outsideActiveWindow = it.page.index < firstActiveIndex - maxDistance ||
@@ -349,6 +393,23 @@ internal class HttpPageLoader(
         indexes.forEach { index ->
             pages.getOrNull(index)?.let { enqueuePageLocked(it, PriorityPage.ADJACENT) }
         }
+    }
+
+    /**
+     * Returns the pages around [activePages] that a continuous viewer should keep loaded, i.e. a
+     * symmetric window of [CONTINUOUS_PREFETCH_RADIUS] pages on both sides of the viewport.
+     */
+    private fun continuousPrefetchIndexes(
+        pageCount: Int,
+        activePages: Collection<ReaderPage>,
+    ): List<Int> {
+        if (activePages.isEmpty() || pageCount <= 0) return emptyList()
+        val activeIndexes = activePages.mapTo(linkedSetOf()) { it.index }
+        val firstActive = activeIndexes.minOrNull() ?: return emptyList()
+        val lastActive = activeIndexes.maxOrNull() ?: return emptyList()
+        val first = (firstActive - CONTINUOUS_PREFETCH_RADIUS).coerceAtLeast(0)
+        val last = (lastActive + CONTINUOUS_PREFETCH_RADIUS).coerceAtMost(pageCount - 1)
+        return (first..last).filterNot { it in activeIndexes }
     }
 
     private fun enqueuePageLocked(page: ReaderPage, priority: Int): PriorityPage? {
@@ -644,3 +705,8 @@ private class PriorityPage(
         return if (p != 0) p else identifier.compareTo(other.identifier)
     }
 }
+
+/**
+ * Number of pages kept loaded on each side of the active page by continuous (webtoon) viewers.
+ */
+private const val CONTINUOUS_PREFETCH_RADIUS = 3
